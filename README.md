@@ -1,5 +1,5 @@
 # Final-Project1
-Final project of MY472 Data for Data Scientist
+Final project of MY472 Data for Data Scientists
 ### _Data science is about bringing clarity to ambiguous situations_
 
 Inside and outside academia, one of the most important skills of a data scientist is to be able to take an ambiguous set of instructions and generate a work product that brings structure and clarity to other people, such as your manager or other academics reviewing your work. This is one of the major themes of this course. We have purposefully pushed you to think creatively, troubleshoot problems on your own, and complete assessments with less guidance than you were probably used to as an undergraduate student. In our view, success in this course is _not_ about how well you can regurgitate lines of code; it is about well you can manage an ambiguous situation and generate useful, impactful and reproducible work.
