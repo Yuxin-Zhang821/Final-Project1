@@ -1,0 +1,830 @@
+---
+title: "Arsenal Football Club's Financial Expenditure and Team Performance"
+author: 44039
+date: 15th January 2025
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+**Prompt:** 3
+
+**ChatGPT/AI disclosure statement:** I used ChatGPT to fix some issues as mentioned below in the code. 
+
+## 1. Introduction
+
+The last time Arsenal won the Premier League title was in the 2003-2004 season. 
+
+As one of the top clubs in the world, enhancing the team's performance and increasing its influence while maintaining financial health has been a sustained goal for the club's management. 
+
+Based on this, I collected data from every Arsenal match over the past ten seasons, along with the transfer and player signing data, in order to analyse the relationship between the club's expenditure and performance each season, as well as their return on investment in player transfers.
+
+## 2. Obtaining Arsenal's Match Statistics
+
+The primary data includes Arsenal's match statistics over the past ten seasons, including goals scored, possession percentages, attendance figures, and so on. These metrics directly reflect the team's performance and influence, forming the core foundation of this report's analysis. 
+
+I collected this data from FBref, a publicly available football statistics website. On this website, each season's matchlog is organised into a table. I went through all matchlog pages from last 10 season, and used rvest to automatically scrape these tables.
+
+When knitting the Rmd, I was blocked by the website for an hour because of triggering its rate limit. After the block, I increased the delay to 3 seconds. 
+
+```{r, primary-data, warning=FALSE, message=FALSE}
+library(tidyverse)
+library(rvest)
+
+# Define a function that generalises to all seasons
+scrape_and_save_table <- function(season, folder_path) {
+  
+ # General form of url for different seasons
+  url <- paste0("https://fbref.com/en/squads/18bb7c10/", season, "/matchlogs/c9/schedule/Arsenal-Scores-and-Fixtures-Premier-League")
+  
+  page <- read_html(url)
+    
+    # Extract the table on the website that contains matchlog
+    table_data <- page %>%
+      html_node(xpath = '//*[@id="matchlogs_for"]') %>% 
+      html_table(fill = TRUE) 
+    
+    # Save as CSV in the folder
+    file_name <- paste0("Arsenal_", season, ".csv")
+    file_path <- file.path(folder_path, file_name)
+    write.csv(table_data, file_path, row.names = FALSE)
+}
+
+# Create the "primary data" folder path
+folder_path <- "/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/primary data"
+
+# Create the folder if it does not exist
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path)
+}
+
+# Define the list of seasons
+seasons <- paste0(2014:2023, "-", 2015:2024)
+
+# Loop through each season, scrape and save the data
+for (season in seasons) {
+  scrape_and_save_table(season, folder_path)
+  Sys.sleep(3)
+}
+
+```
+
+## 3. Obtaining Arsenal's Transfer Record
+
+The secondary data includes the club's transfer record, such as income, expenditure, and overall balance. 
+
+Moreover, I gathered Arsenal's seasonal performance record as a supplementary dataset to the primary data on the team's performance.
+
+I also collected data on Arsenal's new signings for each season to analyse the performance of the most expensive player signed in that season. 
+
+I obtained this data from the Transfermarkt website. During data collection process, I noticed the website had some restrictions on web scraping. I was unable to directly scrape data from the "transfers" page due to a persistent popup that could not be bypassed. To overcome this, I used RSelenium to simulate human actions, navigating from the website's homepage to the "transfers" page for scraping.
+
+```{r, secondary-data-1, warning=FALSE, message=FALSE, eval=FALSE}
+# Since I have difficulty when trying to knit this Rmd, I use "eval=FALSE" in this part.
+library(RSelenium)
+library(rvest)
+library(tidyverse)
+
+url <- "https://www.transfermarkt.co.uk/"
+
+# Start the Selenium server
+rD <- rsDriver(browser = c("firefox"), verbose = FALSE, port = netstat::free_port(random = TRUE), chromever = NULL)
+driver <- rD$client
+
+# Navigate to the website
+driver$navigate(url)
+Sys.sleep(2)
+
+# The cookie pop-up window is on frame 1
+driver$switchToFrame(1)
+
+# Click the Accept button
+accept_button <- driver$findElement(using = "xpath", value = '/html/body/div/div[2]/div[3]/div[1]/div/button') 
+accept_button$clickElement()
+Sys.sleep(1) 
+
+# Switch back to default frame
+driver$switchToFrame(NA) 
+
+# Search for Arsenal
+search_field <- driver$findElement(using = "xpath", value = '/html/body/div[1]/div[5]/div[2]/form/input')
+search_field$sendKeysToElement(list("Arsenal"))
+Sys.sleep(1) 
+
+# Click on the search button
+search_button <- driver$findElement(using = "xpath", value = '/html/body/div[1]/div[5]/div[2]/form/button')
+search_button$clickElement()
+Sys.sleep(1) 
+
+# Find Arsenal FC
+arsenal_link <- driver$findElement(using = "xpath", value = '/html/body/div[1]/main/div[2]/div/div/div/div/table/tbody/tr[1]/td[2]/table/tbody/tr[1]/td')
+arsenal_link$clickElement()
+Sys.sleep(1) 
+
+# Find all transfers
+all_transfers_link <- driver$findElement(using = "xpath", value = '/html/body/div[1]/main/div[1]/div[2]/div[3]/a')
+all_transfers_link$clickElement()
+Sys.sleep(1) 
+```
+
+```{r, secondary-data-2, eval=FALSE}
+# Create the secondary data foler
+if (!dir.exists("secondary data")) {
+  dir.create("secondary data")
+}
+
+# Loop through the seasons from 14-15 to 23-24
+for (i in 14:23) {
+  season_folder <- paste0("secondary data/", i, "-", i + 1))
+  
+  # Create a folder for the current season
+  if (!dir.exists(season_folder)) {
+    dir.create(season_folder)
+  }
+ 
+  # Create the general xpath for each season (originally the general xpath should be paste0("//*[@id="selSM7_chzn_o_', 26 - i, '"]"). But the three numbers or letters after "sel" seem to be random and keep changing
+  season_xpath <- paste0("//*[contains(@id, 'chzn_o_') and contains(@id, '_", 26 - i, "')]")
+
+  # Filter by season
+  filter_by_season <- driver$findElement(using = "xpath", value = '/html/body/div[1]/main/div[1]/div[1]/div[1]/div/form/div/div/table/tbody/tr[1]/td[2]/div/div/a')
+  filter_by_season$clickElement()
+  Sys.sleep(2)
+  
+  # Choose the season
+  the_season <- driver$findElement(using = "xpath", value = season_xpath)
+  the_season$clickElement()
+  Sys.sleep(2)
+  
+  # Click on the Display button
+  dispay_button <- driver$findElement(using = "xpath", value = '/html/body/div[1]/main/div[1]/div[1]/div[1]/div/form/div/div/table/tbody/tr[4]/td[3]/input')
+  dispay_button$clickElement()
+  Sys.sleep(2)
+  
+  # Extract the page source
+  page_source <- driver$getPageSource()[[1]]
+  
+  # Parse the page source
+  page_html <- read_html(page_source)
+  
+  # Extract the transfer record
+  transfer_record <- page_html %>%
+    html_element(xpath = "/html/body/div[1]/main/div[1]/div[2]/div[2]/table") %>%
+    html_table(fill = TRUE)
+  
+  # Extract the season record
+  season_record <- page_html %>%
+    html_element(xpath = "/html/body/div[1]/main/div[1]/div[2]/div[3]/table") %>%
+    html_table(fill = TRUE)
+  
+  # Extract the signing of the season
+  signing <- page_html %>%
+    html_element(xpath = "/html/body/div[1]/main/div[1]/div[1]/div[2]/div[2]/div/table") %>%
+    html_table(fill = TRUE)
+  
+  # Save the three tables as CSV files
+  write_csv(transfer_record, file = paste0(season_folder, "/transfer_record.csv"))
+  write_csv(season_record, file = paste0(season_folder, "/season_record.csv"))
+  write_csv(signing, file = paste0(season_folder, "/signing.csv"))
+  
+}
+```
+
+```{r, secondary-data-3, eval=FALSE}
+# Stop the Selenium driver
+driver$close()
+rD$server$stop()
+```
+
+## 4. Tabular Data and Transformations
+
+#### 4.1 Tabular data
+
+First, I built tidy tabular data based on the data I scraped from the website.
+
+(1)The primary data is tidy. Because each variable has its own column; each observation (each match) has its own row; each value has its own cell.
+
+I printed the first few rows for the 2014-2015 season as an example: 
+
+```{r, tabular-data-1, warning=FALSE, message=FALSE}
+library(tidyverse)
+primary_14 <- read_csv("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/primary data/Arsenal_2014-2015.csv", show_col_types = FALSE)
+head(primary_14)
+```
+
+(2)As for secondary data, the season record and transfer record is tidy.
+
+I printed the first few rows for the 2014-2015 season as an example:
+
+```{r, tabular-data-2, warning=FALSE, message=FALSE}
+season_record_14 <- read_csv("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/14-15/season_record.csv", show_col_types = FALSE)
+head(season_record_14)
+```
+
+```{r, tabular-data-3, warning=FALSE, message=FALSE}
+transfer_record_14 <- read_csv("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/14-15/transfer_record.csv", show_col_types = FALSE)
+head(transfer_record_14)
+```
+
+The signing data is untidy. My goal is to obtain a tidy table containing the players' names, position, and their transfer fee.
+
+First I cleaned the signing data from the 2014-2015 season as an example:
+
+```{r, tabular-data-4, warning=FALSE, message=FALSE}
+library(tidyverse)
+signing_14 <- read_csv("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/14-15/signing.csv")
+
+cleaned_signing_14 <- signing_14 %>%
+  # Remove the first three rows
+  slice(-(1:3)) %>%
+  # Remove the NA rows in Nat. column
+  filter(!is.na(Nat.)) %>%
+  # Remain the two columns I need
+  select(Nat., Left, `...12`) %>%
+  # Rename the column
+  rename(
+    Player = Nat.,
+    Position = Left,
+    Fee = `...12`
+  )
+
+print(cleaned_signing_14)
+```
+
+Then I generalised to all signing data in the secondary_data folder, and saved the cleaned_signing files into the folder.
+
+```{r, tabular-data-5, warning=FALSE, message=FALSE}
+# Define the path to all folders
+folders <- paste0("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/", 14:23, "-", 15:24)
+
+for (folder in folders) {
+  
+  file_path <- file.path(folder, "signing.csv")
+  
+  # Read and clean the data
+  cleaned_signing_data <- read_csv(file_path) %>%
+    # Remove the first three rows
+    slice(-(1:3)) %>%
+    # Remove the NA rows in Nat. column
+    filter(!is.na(Nat.)) %>%
+    # Remain the two columns I need
+    select(Nat., Left, `...12`) %>%
+    # Rename the column
+    rename(
+      Player = Nat.,
+      Position = Left,
+      Fee = `...12`
+    )
+  
+  # Generate the path of the output data
+  output_path <- file.path(folder, "cleaned_signing.csv")
+  
+  # Save the cleaned data
+  write_csv(cleaned_signing_data, output_path)
+}
+
+```
+
+#### 4.2 Five Transformations
+
+Next, I make five transformations of the data:
+
+(1)Season performance
+
+I created a table with two columns to evaluate Arsenal's overall performance in Premier League each season. The two columns are: Season and Ranking.
+
+```{r, season-performance, warning=FALSE, message=FALSE}
+# Define the path to all folders
+folders <- paste0("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/", 14:23, "-", 15:24)
+
+# Generate seasons
+seasons <- paste0(2014:2023, "-", 2015:2024)
+
+# Initialise an empty data frame for results
+season_performance <- data.frame(Season = character(), 
+                          Ranking = numeric()
+                         )
+
+# Loop through each folder and process the data
+for (i in 1:length(folders)) {
+  
+  folder <- folders[i]
+  file_path <- file.path(folder, "season_record.csv")
+  
+  # Read the CSV file
+  data <- read_csv(file_path, show_col_types = FALSE)
+  
+  # Extract the ranking
+  # There are two special cases
+  if (seasons[i] == "2014-2015") {
+    ranking <- as.numeric(gsub("(st|nd|rd|th)", "", data$Achieve[5]))
+  } else if (seasons[i] == "2021-2022") {
+    ranking <- as.numeric(gsub("(st|nd|rd|th)", "", data$Achieve[3]))
+  } else {
+  ranking <- as.numeric(gsub("(st|nd|rd|th)", "", data$Achieve[4]))  
+  } 
+  # Add the results to the empty frame
+  season_performance <- bind_rows(season_performance, 
+                          tibble(Season = seasons[i], 
+                                 Ranking = ranking))
+}
+
+print(season_performance)
+
+# Save the table to the derivative data folder
+if (!dir.exists("derivative data")) {
+  dir.create("derivative data")
+}
+write.csv(season_performance, "derivative data/season_performance.csv")
+
+```
+
+(2)Match performance
+
+I calculated the win rate, total goals scored, total goals conceded, and average possession rate for each season and created a table with five columns to evaluate Arsenal's match performance in each season. The five columns are: Season, Win_Rate, Total_Goals_Scored, Total_Goals_Conceded, and Average_Possession_Rate.
+
+```{r, match-performance, warning=FALSE, message=FALSE}
+# Define the path to all folders
+files <- paste0("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/primary data/Arsenal_", 2014:2023, "-", 2015:2024, ".csv")
+
+# Generate seasons
+seasons <- paste0(2014:2023, "-", 2015:2024)
+
+# Initialise an empty data frame for results
+match_performance <- data.frame(Season = character(), 
+                           Win_Rate = numeric(),
+                           Total_Goals_Scored = numeric(),
+                           Total_Goals_Conceded = numeric(),
+                           Average_Possession_Rate = numeric()
+                         )
+
+# Loop through each folder and process the data
+for (i in 1:length(files)) {
+  
+  file <- files[i]
+  data <- read_csv(file)
+  
+  # Calculate the win rate, total goals scored, total goals conceded, and average possesion rate
+  win_rate <- round(sum(data$Result == "W") / 38 * 100, 2)
+  total_goals_scored <- sum(data$GF)
+  total_goals_conceded <- sum(data$GA)
+  average_possession_rate <- round(mean(data$Poss), 2)
+
+  # Add the results to the empty frame
+  match_performance <- bind_rows(match_performance, 
+                          tibble(Season = seasons[i], 
+                                 Win_Rate = win_rate,
+                                 Total_Goals_Scored = total_goals_scored,
+                                 Total_Goals_Conceded = total_goals_conceded,
+                                 Average_Possession_Rate = average_possession_rate
+                                ))
+}
+
+print(match_performance)
+
+# Save the table to the derivative data folder
+write.csv(match_performance, "derivative data/match_performance.csv")
+```
+
+(3)Home influence
+
+I calculated the average attendance at home for each season and created a table with two columns to evaluate Arsenal's home influence. The two columns are: Season and Average_Attendance.
+
+```{r, home-influence, warning=FALSE, message=FALSE}
+# Initialise an empty data frame for results
+home_influence <- data.frame(Season = character(), 
+                          Average_Attendance = numeric()
+                         )
+
+# Loop through each folder and process the data
+for (i in 1:length(files)) {
+  
+  file <- files[i]
+  data <- read_csv(file)
+  
+  # Calculate the average attendance at home
+  average_attendance <- round(mean(data$Attendance[!is.na(data$Attendance) & data$Venue == "Home"]), 0)
+
+  # Add the results to the empty frame
+  home_influence <- bind_rows(home_influence, 
+                          tibble(Season = seasons[i], 
+                                Average_Attendance = average_attendance
+                                ))
+}
+
+print(home_influence)
+
+# Save the table to the derivative data folder
+write.csv(home_influence, "derivative data/home_influence.csv")
+```
+
+Attendance during the 2020-2021 season was unusually low due to COVID-19, with most matches played without spectators and only a few allowing limited fans.
+
+(4)Financial condition
+
+I created a table with four columns to evaluate Arsenal's financial condition. The four columns are: Season, Income, Expenditure, and Overall_Balance.
+
+```{r, financial-condition, warning=FALSE, message=FALSE}
+# Define the path to all folders
+folders <- paste0("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/", 14:23, "-", 15:24)
+
+# Generate seasons
+seasons <- paste0(2014:2023, "-", 2015:2024)
+
+# Initialise an empty data frame for results
+financial_condition <- data.frame(Season = character(), 
+                         `Income/m€` = numeric(), 
+                         `Expenditure/m€` = numeric(), 
+                         `Overall_Balance/m€` = numeric()
+                         )
+
+# Loop through each folder and process the data
+for (i in 1:length(folders)) {
+  folder <- folders[i]
+  file_path <- file.path(folder, "transfer_record.csv")
+  
+  # Read the CSV file
+  data <- read_csv(file_path, show_col_types = FALSE)
+  
+  # Extract income, expenditure, and overall balance
+  income <- as.numeric(gsub("[€m]", "", data$Fee[1]))  
+  expenditure <- as.numeric(gsub("[€m]", "", data$Fee[2])) 
+  overall_balance <- as.numeric(gsub("[€m]", "", data$Fee[3])) 
+
+  # Add the results to the empty frame
+  financial_condition <- bind_rows(financial_condition, 
+                          tibble(Season = seasons[i], 
+                                 `Income/m€` = income, 
+                                 `Expenditure/m€` = expenditure, 
+                                 `Overall_Balance/m€` = overall_balance)) %>%
+                         select(Season, `Income/m€`, `Expenditure/m€`, `Overall_Balance/m€`)
+}
+
+print(financial_condition)
+
+# Save the table to the derivative data folder
+write.csv(financial_condition, "derivative data/financial_condition.csv")
+
+```
+
+(5)Most expensive signings
+
+To analyse the return on investment in player transfers, I decided to collecte data on each season's most expensive signing and their performance.
+
+First, I identified the most expensive player signed that season from the "cleaned_signing.csv" file. Then, I retrieved the corresponding player's match performance statistics from FBref.
+
+```{r, most-expensive-signing-1, warning=FALSE, message=FALSE}
+# Define the path to all folders
+folders <- paste0("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/", 14:23, "-", 15:24)
+
+# Exclude the "15-16" folder, as the character of the player's name is special, different from the cleaned_signing.csv
+folders <- folders[!grepl("15-16", folders)]
+
+for (folder in folders) {
+
+  csv_file <- file.path(folder, "cleaned_signing.csv")
+
+  data <- read.csv(csv_file)
+  
+  # Extract the name of the most expensive player
+  player_name <- data$Player[1]
+  
+  ### * the following line of code were generated by ChatGPT: 
+  # Here I asked ChatGPT how to extract the year part from the folder path
+  folder_basename <- basename(folder)  
+  year_start <- as.numeric(str_extract(folder_basename, "^\\d{2}")) + 2000 
+  year_end <- year_start + 1
+  season <- paste0(year_start, "-", year_end)  
+  
+  # Create the general url
+  url <- paste0("https://fbref.com/en/squads/18bb7c10/", season, "/roster/Arsenal-Roster-Details")
+  
+  page <- read_html(url)
+  
+  # Define the xpath of the player's statistics
+  content_xpath <- paste0("//h2[a[text()='", player_name, "']]/following-sibling::div[2]//table")
+  
+  # Extract the player's statistics
+  content_data <- page %>%
+    html_nodes(xpath = content_xpath) %>%
+    html_table(fill = TRUE)
+  
+    # Extract the table
+    content_df <- content_data[[1]]
+    
+    # Set the first row as column names
+    colnames(content_df) <- content_df[1, ]
+    content_df <- content_df[-1, ]
+
+    # Save the files to the folder
+    output_file <- file.path(folder, "most_expensive_signing_data.csv")
+    write.csv(content_df, output_file, row.names = FALSE)
+    
+    Sys.sleep(3)
+
+}
+
+```
+
+Since the Xpath of the most expensive player from 2015-2016 is special, I extracted it separately.
+
+```{r, most-expensive-signing-2, warning=FALSE, message=FALSE}
+page <- read_html("https://fbref.com/en/squads/18bb7c10/2015-2016/roster/Arsenal-Roster-Details")
+  
+# Define the special XPath
+content_xpath <- paste0("//h2[a[text()='Petr Čech']]/following-sibling::div[2]//table")
+  
+# Extract Petr Čech's statistics
+content_data <- page %>%
+  html_nodes(xpath = content_xpath) %>%
+  html_table(fill = TRUE)
+  
+# Extract the table
+content_df <- content_data[[1]]
+
+# Set the first row as column names
+colnames(content_df) <- content_df[1, ]
+content_df <- content_df[-1, ]
+
+# Save the file to the folder
+output_file <- file.path("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/15-16/most_expensive_signing_data.csv")
+write.csv(content_df, output_file, row.names = FALSE)
+
+```
+
+Next, based on the extracted data, I calculated the player's scoring efficiency (average minutes played per goal) and created a table with six columns. The six columns are: Season, Player, Position, Minutes_Played, Transfer_Fee, and Scoring_Efficiency.
+
+```{r, most-expensive-signing-3, warning=FALSE, message=FALSE}
+# Define the path to all folders
+folders <- paste0("/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/secondary data/", 14:23, "-", 15:24)
+
+# Generate seasons
+seasons <- paste0(2014:2023, "-", 2015:2024)
+
+# Initialise an empty data frame for results
+most_expensive_signing <- data.frame(Season = character(), 
+                          Player = character(),
+                          Position = character(),
+                          Minutes_Played = numeric(),
+                         `Transfer_Fee/m€` = numeric(),
+                         `Scoring_Efficiency/(min/gls)` = numeric()
+                         )
+
+# Loop through each folder and process the data
+for (i in 1:length(folders)) {
+  
+  folder <- folders[i]
+  signing_file_path <- file.path(folder, "cleaned_signing.csv")
+  player_file_path <- file.path(folder, "most_expensive_signing_data.csv")
+  
+  # Read the CSV file
+  sigining_data <- read_csv(signing_file_path, show_col_types = FALSE)
+  player_data <- read_csv(player_file_path, show_col_types = FALSE)
+  
+  # Extract the player's name, transfer fee
+  player <- sigining_data$Player[1]  
+  position <- sigining_data$Position[1]
+  transfer_fee <- as.numeric(gsub("[€m]", "", sigining_data$Fee[1])) 
+  
+  # Check if Gls exists (One of the player is goalkeeper, and doesn't have goals)
+  if (!("Gls...8" %in% colnames(player_data))) {
+    scoring_efficiency <- NA
+    player_data <- player_data %>%
+     # Match the corresponding season
+     filter(Season == seasons[i]) %>%  
+     mutate(
+       Min = as.numeric(gsub(",", "", Min...7))
+     )
+    minutes_played <- player_data$Min[1]
+  } else {
+   # Clean Min and Gls columns in player_data for calculations
+   player_data <- player_data %>%
+     # Match the corresponding season
+     filter(Season == seasons[i]) %>%  
+     mutate(
+       # Here I checked the column names and found there are some special characters
+       Min = as.numeric(gsub(",", "", Min...7)), 
+       Gls = as.numeric(Gls...8)                
+     )
+   
+  # Extract the player's minutes played
+  minutes_played <- player_data$Min[1]
+  
+  # Calculate player's scoring efficiency
+  # If Gls is NA, set scoring_efficiency to NA
+  scoring_efficiency <- ifelse(
+    is.na(player_data$Gls[1]) || player_data$Gls[1] == 0,
+    NA, 
+    round(player_data$Min[1] / player_data$Gls[1], 2)
+  )
+ } 
+  
+  # Add the results to the empty frame
+  most_expensive_signing <- bind_rows(most_expensive_signing, 
+                          tibble(Season = seasons[i], 
+                                 Player = player,
+                                 Position = position,
+                                 Minutes_Played = minutes_played,
+                                `Transfer_Fee/m€` = transfer_fee,
+                                `Scoring_Efficiency/(min/gls)` = scoring_efficiency))
+
+}
+
+ # Remove the unexpected columns
+  most_expensive_signing <- most_expensive_signing %>%
+    select(
+      Season,
+      Player,
+      Position,
+      Minutes_Played,
+     `Transfer_Fee/m€`,
+     `Scoring_Efficiency/(min/gls)`
+   )
+  
+print(most_expensive_signing)
+
+# Save the table to the derivative data folder
+write.csv(most_expensive_signing, "derivative data/most_expensive_signing.csv")
+
+```
+
+## 5. Data Visualisation
+
+#### 5.1 Arsenal's Team Performance And Expenditure Over the Past 10 Seasons
+
+Firstly, I attempted to analyse the relationship between Arsenal's financial expenditures and its overall performance. 
+
+I merged data from the tabular data above to create the chart below. 
+
+The bar chart represents the team's expenditures per season, the blue line represents the win rate, and the red line represents Arsenal's Premier League ranking.
+
+```{r, data-visualisation-1, warning=FALSE, message=FALSE}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# Combine data from financial_condition,season_performance and match performance
+performance_financial_combined <- merge(
+  merge(financial_condition, season_performance, by = "Season"),
+  match_performance,
+  by = "Season"
+)
+
+### * the following line of code were generated by ChatGPT: here I asked ChatGPT how to make the ranking line follow the secondary axis scale changes.
+adjusted_ranking <- (10 - performance_financial_combined$Ranking) * (250 / 9)
+
+# Create a dual-axis chart
+ggplot(performance_financial_combined, aes(x = Season)) +
+  # Bar chart for expenditure
+  geom_bar(aes(y = `Expenditure/m€`, fill = "Expenditure"), stat = "identity", alpha = 0.7, width = 0.4) +
+  # Line chart for win rate
+  geom_line(aes(y = Win_Rate, group = 1, color = "Win Rate"), size = 1, linetype = "dashed") +
+  geom_point(aes(y = Win_Rate, color = "Win Rate"), size = 2) +
+  # Line chart for ranking
+  geom_line(aes(y = adjusted_ranking, group = 1, color = "Ranking"), size = 1) +
+  geom_point(aes(y = adjusted_ranking, color = "Ranking"), size = 2) +
+  # Set legend and colors
+  scale_fill_manual(name = "Expenditure", values = c("Expenditure" = "#f4a582")) +
+  scale_color_manual(name = "Performance", values = c("Win Rate" = "#2166ac", "Ranking" = "#b2182b")) +
+  # Add text to display the ranking values
+  geom_text(aes(
+    y = adjusted_ranking, 
+    label = Ranking,
+    color = "Ranking"
+  ), vjust = -0.8, size = 3) +
+  # Add a second axis
+  scale_y_continuous(
+    name = "Expenditure (m€) / Win Rate (%)",
+    ### * the following line of code were generated by ChatGPT: here I asked ChatGPT how to set a secondary y-axis
+    sec.axis = sec_axis(~ -9 / 250 * . + 10, name = "Premier League Ranking", breaks = seq(2, 10, by = 2)) ) +
+  # Add labels and titles
+  labs(
+    title = "Arsenal's Team Performance And Expenditure Over the Past 10 Seasons",
+    x = "Season",
+    y = "Expenditure (m€) / Win Rate (%)"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1),
+    legend.position = "top",
+    plot.title = element_text(hjust = 0.5)
+  )
+
+```
+
+#### 5.2 Most Expensive Players: Playing Time and Scoring Efficiency
+
+Next, I aimed to analyse Arsenal's return on investment in transfers. 
+
+I categorised these players into forward, midfield, back, and goalkeeper, with a focus primarily on forwards and midfielders due to their higher goal-scoring roles, while defender's and goalkeeper's performance cannot be evaluated by goals scored. 
+
+I created the following bar charts for forwards and midfielders, using different colors to indicate their scoring efficiency - darker colors indicating higher efficiency. Additionally, I designed interactivity so that hovering over each bar reveals additional information about the player.
+
+```{r, data-visualisation-2, warning=FALSE, message=FALSE}
+library("plotly")
+# Group most expensive players by Position
+most_expensive_signing_position <- most_expensive_signing %>%
+  mutate(Position = ifelse(Position %in% c("Centre-Forward", "Right Winger"), "Forward",
+                   ifelse(Position %in% c("Defensive Midfield", "Central Midfield"), "Midfield",
+                   ifelse(Position == "Right-Back", "Back",
+                   ifelse(Position == "Goalkeeper", "Goalkeeper", "Other"))))) %>%
+  arrange(Position) 
+
+# Filter the data of forward and midfield
+forward_data <- most_expensive_signing_position %>%
+  filter(Position == "Forward")
+
+midfield_data <- most_expensive_signing_position %>%
+  filter(Position == "Midfield")
+
+# Plot for Forward players
+forward_plot <- ggplot(forward_data, aes(x = reorder(Player, `Scoring_Efficiency/(min/gls)`), 
+                                         y = Minutes_Played, 
+                                         fill = `Scoring_Efficiency/(min/gls)`)) +
+  geom_bar(stat = "identity", width = 0.5, aes(text = paste(
+    "Player: ", Player, "<br>",
+    "Transfer Fee:", `Transfer_Fee/m€`, "m€<br>",
+    "Minutes Played: ", Minutes_Played, "min<br>",
+    "Scoring Efficiency: ", `Scoring_Efficiency/(min/gls)`, "min/gl"
+  ))) +
+  scale_fill_gradientn(colors = c("#54278f", "#756bb1", "#9e9ac8", "#bcbddc", "#dadaeb"), name = "Scoring Efficiency\n(min/gls)") +
+  labs(
+    title = "Forward Players: Playing Time and Scoring Efficiency",
+    x = "Player",
+    y = "Minutes Played"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle =15, hjust = 0.5, margin = margin(t = 5)), 
+    legend.position = "right",
+    legend.title = element_text(size = 10), 
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  )
+
+# Plot for midfield players
+midfield_plot <- ggplot(midfield_data, aes(x = reorder(Player, `Scoring_Efficiency/(min/gls)`), 
+                                         y = Minutes_Played, 
+                                         fill = `Scoring_Efficiency/(min/gls)`)) +
+  geom_bar(stat = "identity", width = 0.5, aes(text = paste(
+    "Player: ", Player, "<br>",
+    "Transfer Fee:", `Transfer_Fee/m€`, "m€<br>",
+    "Minutes Played: ", Minutes_Played, "min<br>",
+    "Scoring Efficiency: ", `Scoring_Efficiency/(min/gls)`, "min/gl"
+  ))) +
+  scale_fill_gradientn(colors = c("#54278f", "#756bb1", "#9e9ac8", "#bcbddc", "#dadaeb"), name = "Scoring Efficiency\n(min/gls)") +
+  labs(
+    title = "Midfield Players: Playing Time and Scoring Efficiency",
+    x = "Player",
+    y = "Minutes Played"
+  ) +
+  theme_minimal() +
+  theme(
+    axis.text.x = element_text(angle =15, hjust = 0.5, margin = margin(t = 5)), 
+    legend.position = "right",
+    legend.title = element_text(size = 10), 
+    plot.title = element_text(hjust = 0.5, size = 14, face = "bold")
+  )
+
+interactive_forward_plot <- ggplotly(forward_plot, tooltip = "text") 
+interactive_midfield_plot <- ggplotly(midfield_plot, tooltip = "text") 
+
+interactive_forward_plot
+interactive_midfield_plot
+
+```
+
+## 6. Data and Output Storage
+
+The raw data is stored separately in the "primary data" and "secondary data" folders. Some cleaned secondary data is also stored in the "secondary data" folder. 
+
+Tabular data obtained through five transformations is saved in the "derivative data" folder. 
+
+Two output charts are stored in the working directory.
+
+```{r, output-storage, warning=FALSE, message=FALSE}
+library("htmlwidgets")
+### * the following line of code were generated by ChatGPT: here I asked ChatGPT how to save the interactive charts
+saveWidget(interactive_forward_plot, "forward_plot.html")
+saveWidget(interactive_midfield_plot, "midfield_plot.html")
+```
+
+
+```{r, word-count, eval=FALSE}
+library(tidyverse)
+
+rmd_file <- "/Users/zhangyuxin/Local/my472-at24-final-Yuxin-Zhang821/MY472-AT24-final-report.Rmd" # path to your Rmd file
+
+read_file(rmd_file) %>% # read the file as a text file
+  str_squish() %>% # remove all extra white space
+  str_replace("^.+?output.+?[-]{3}", "") %>% # remove header
+  str_replace_all("```[{].+?```", " ") %>% # remove code chunks
+  str_replace_all("<![-].+?-->", " ") %>% # remove rmd comments
+  str_replace_all("[!]?\\[.+\\][(].+[)]", " ") %>% # remove links
+  str_replace_all("(^|\\s+)[^A-Za-z0-9]+", " ") %>% # remove symbols (1)
+  str_replace_all("[^A-Za-z0-9]+($|\\s+)", " ") %>% # remove symbols (2)
+  str_count("\\S+") %>% 
+  paste("The document is", ., "words.") %>%
+  print()
+```
+
